@@ -43,30 +43,192 @@ class ModernFloatWindow(QMainWindow):
         self.setupGUI()
         self.connectSignals()
 
-    # [Previous GUI setup methods remain the same until the command methods]
+    def connectSignals(self):
+        self.float_down.clicked.connect(self.onFloatDownClicked)
+        self.plot_button.clicked.connect(self.sendPlotCommand)
+        self.in_button.clicked.connect(self.sendInCommand)
+        self.mount_button.clicked.connect(self.sendMountCommand)
 
-    def sendPlotCommand(self):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((self.espIPAddress, self.espPort))
-                s.setblocking(0)
-                s.sendall(b'plot')
-                print("Requesting plot data")
+    def setupGUI(self):
+        self.setWindowTitle("Float Control System")
+        self.resize(1400, 800)
+        self.setStyleSheet(f"background-color: {self.colors['background']};")
 
-                while True:
-                    ready = select.select([s], [], [], 1)
-                    if ready[0]:
-                        data = s.recv(1024)
-                        if not data:
-                            break
+        main_widget = QWidget()
+        main_layout = QHBoxLayout()
+        
+        left_panel = self.createLeftPanel()
+        center_panel = self.createCenterPanel()
+        right_panel = self.createRightPanel()
 
-                        detailed_response = data.decode('utf-8').strip()
-                        print("Received:", detailed_response)
-                        self.processReceivedData(detailed_response)
-                        break
+        main_layout.addWidget(left_panel, 1)
+        main_layout.addWidget(center_panel, 2)
+        main_layout.addWidget(right_panel, 1)
+        
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
 
-        except Exception as e:
-            print(f"Failed to send plot command: {e}")
+    def createLeftPanel(self):
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['card']};
+                border-radius: 15px;
+                margin: 10px;
+                padding: 10px;
+            }}
+        """)
+        layout = QVBoxLayout()
+        layout.setSpacing(5)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Create and store labels for updating
+        self.company_label = self.createStatusCard("Company Number", "RN16")
+        self.depth_label = self.createStatusCard("Current Depth", "0.00 m")
+        self.pressure_label = self.createStatusCard("Pressure", "101.3 kPa")
+        self.time_label = self.createStatusCard("Time", "00:00:00")
+
+        layout.addWidget(self.company_label)
+        layout.addWidget(self.depth_label)
+        layout.addWidget(self.pressure_label)
+        layout.addWidget(self.time_label)
+
+        layout.addStretch(1)
+        panel.setLayout(layout)
+        return panel
+
+    def createStatusCard(self, title, value):
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['background']};
+                border-radius: 10px;
+                padding: 5px;
+                margin: 2px;
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(2)
+        layout.setContentsMargins(5, 5, 5, 5)
+        
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            color: {self.colors['text_secondary']};
+            font-size: 18px;
+            font-weight: bold;
+        """)
+        
+        value_label = QLabel(value)
+        value_label.setStyleSheet(f"""
+            color: {self.colors['text']};
+            font-size: 24px;
+            font-weight: bold;
+        """)
+        
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        card.setLayout(layout)
+        
+        # Store the value label in the card for updating
+        card.value_label = value_label
+        return card
+
+    def createCenterPanel(self):
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['card']};
+                border-radius: 15px;
+                margin: 10px;
+                padding: 10px;
+            }}
+        """)
+        layout = QVBoxLayout()
+        layout.setSpacing(2)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        title = QLabel("Depth Profile")
+        title.setStyleSheet(f"""
+            color: {self.colors['text']};
+            font-size: 24px;
+            font-weight: bold;
+            padding: 0px;
+            margin: 0px;
+        """)
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(title)
+
+        self.figure = Figure(facecolor=self.colors['card'])
+        self.figure.subplots_adjust(top=0.95, bottom=0.1, left=0.1, right=0.95)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.axes = self.figure.add_subplot(111)
+        self.axes.set_facecolor(self.colors['card'])
+        
+        self.axes.tick_params(colors=self.colors['text'])
+        for spine in self.axes.spines.values():
+            spine.set_color(self.colors['text_secondary'])
+        
+        self.axes.set_xlabel('Time (s)', color=self.colors['text'])
+        self.axes.set_ylabel('Depth (m)', color=self.colors['text'])
+        
+        layout.addWidget(self.canvas)
+        layout.addStretch(1)
+        panel.setLayout(layout)
+        return panel
+
+    def createRightPanel(self):
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.colors['card']};
+                border-radius: 15px;
+                margin: 10px;
+                padding: 10px;
+            }}
+        """)
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        self.float_down = self.createStyledButton("FLOAT DOWN")
+        self.plot_button = self.createStyledButton("PLOT DATA")
+        self.in_button = self.createStyledButton("IN")
+        self.mount_button = self.createStyledButton("MOUNT")
+
+        layout.addWidget(self.float_down)
+        layout.addWidget(self.plot_button)
+        layout.addWidget(self.in_button)
+        layout.addWidget(self.mount_button)
+        layout.addStretch(1)
+
+        panel.setLayout(layout)
+        return panel
+
+    def createStyledButton(self, text):
+        button = QPushButton(text)
+        button.setFixedSize(200, 60)
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.colors['accent']};
+                color: white;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: bold;
+                margin: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #0056b3;
+            }}
+            QPushButton:pressed {{
+                background-color: #003d80;
+            }}
+        """)
+        return button
+
+    def onFloatDownClicked(self):
+        self.floatCount += 1
+        self.sendFloatCommand()
 
     def sendFloatCommand(self):
         try:
@@ -92,6 +254,29 @@ class ModernFloatWindow(QMainWindow):
 
         except Exception as e:
             print(f"Failed to send float command: {e}")
+
+    def sendPlotCommand(self):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.espIPAddress, self.espPort))
+                s.setblocking(0)
+                s.sendall(b'plot')
+                print("Requesting plot data")
+
+                while True:
+                    ready = select.select([s], [], [], 1)
+                    if ready[0]:
+                        data = s.recv(1024)
+                        if not data:
+                            break
+
+                        detailed_response = data.decode('utf-8').strip()
+                        print("Received:", detailed_response)
+                        self.processReceivedData(detailed_response)
+                        break
+
+        except Exception as e:
+            print(f"Failed to send plot command: {e}")
 
     def sendInCommand(self):
         print("'In' command not implemented in Arduino")
@@ -173,8 +358,6 @@ class ModernFloatWindow(QMainWindow):
                         labelcolor=self.colors['text'])
         
         self.canvas.draw()
-
-    # [All the GUI creation methods (createLeftPanel, createCenterPanel, etc.) remain exactly the same]
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -20,7 +20,7 @@ class ModernFloatWindow(QMainWindow):
         self.espPort = 80
         
         # Store labels as instance variables for updating
-        self.company_label = None
+        self.project_label = None
         self.depth_label = None
         self.pressure_label = None
         self.time_label = None
@@ -83,12 +83,12 @@ class ModernFloatWindow(QMainWindow):
         layout.setContentsMargins(10, 10, 10, 10)
 
         # Create and store labels for updating
-        self.company_label = self.createStatusCard("Company Number", "RN16")
+        self.project_label = self.createStatusCard("MATE", "Float")
         self.depth_label = self.createStatusCard("Current Depth", "0.00 m")
         self.pressure_label = self.createStatusCard("Pressure", "101.3 kPa")
         self.time_label = self.createStatusCard("Time", "00:00:00")
 
-        layout.addWidget(self.company_label)
+        layout.addWidget(self.project_label)
         layout.addWidget(self.depth_label)
         layout.addWidget(self.pressure_label)
         layout.addWidget(self.time_label)
@@ -248,7 +248,7 @@ class ModernFloatWindow(QMainWindow):
                         detailed_response = data.decode('utf-8').strip()
                         print("Received:", detailed_response)
 
-                        if detailed_response.startswith(("Company Number", "RN16")):
+                        if detailed_response.startswith(("project Number", "RN16")):
                             self.processReceivedData(detailed_response)
                             break
 
@@ -290,10 +290,10 @@ class ModernFloatWindow(QMainWindow):
         try:
             # Splitting the data based on '|'
             parts = data.split('|')
-            company_number = parts[0]  # Company number is the first part
+            project_number = parts[0]  # project number is the first part
             
-            # Update company number in status
-            self.updateStatusLabels(company_number=company_number)
+            # Update project number in status
+            self.updateStatusLabels(project_number=project_number)
 
             # Process the data points
             if len(parts) > 1:
@@ -327,9 +327,9 @@ class ModernFloatWindow(QMainWindow):
         except Exception as e:
             print(f"Error processing received data: {e}")
 
-    def updateStatusLabels(self, company_number=None, depth=None, pressure=None, time=None):
-        if company_number is not None:
-            self.company_label.value_label.setText(str(company_number))
+    def updateStatusLabels(self, project_number=None, depth=None, pressure=None, time=None):
+        if project_number is not None:
+            self.project_label.value_label.setText(str(project_number))
         if depth is not None:
             self.depth_label.value_label.setText(f"{depth:.2f} m")
         if pressure is not None:

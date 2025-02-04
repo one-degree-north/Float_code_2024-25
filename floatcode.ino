@@ -16,10 +16,10 @@ const String companyNum = "RN16";
 
 MS5837 sensor;
 const int stepsPerRevolution = 400;  
-const int dirPin = 14;  // Example: GPIO14 instead of D5
-const int stepPin = 12;  // Example: GPIO12 instead of D4
-const int enablePin = 13; // Example: GPIO13 instead of D3
-const int stepReps = 6; //stepper motor num of rotations
+const int dirPin = 6;  
+const int stepPin = 5; 
+//const int enablePin = 13; 
+const int stepReps = 6; 
 
 Stepper myStepper(stepsPerRevolution, dirPin, stepPin);
 

@@ -12,8 +12,6 @@
 #include <Wire.h>
 //above imports important libraries
 
-const String companyNum = "RN16"; 
-
 MS5837 sensor;
 const int stepsPerRevolution = 400;  
 const int dirPin = 6;  
@@ -127,7 +125,7 @@ void loop() {//code that constantly loops
     startingTime = millis();
     lastDataPointTime = startingTime;
     updateSensors();
-    client.println("Company Number: " + companyNum + ", Time: 0, Pressure: " + String(pressure) + ", Depth: " + String(depth));
+    client.println("Time: 0, Pressure: " + String(pressure) + ", Depth: " + String(depth));
         
     dataPoints[dataPointIndex++] = {0, depth, pressure};
 
@@ -245,7 +243,7 @@ void FloatUp() {
 }
 
 String logData() {
-  String dataPacket = companyNum+ "|"; // Start with the company number, then a delimiter
+  String dataPacket = ""; 
 
   // Append each data point, formatted as time:depth, separated by semicolons
   for (int i = 0; i < dataPointIndex; i++) {

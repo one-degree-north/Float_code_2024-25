@@ -13,7 +13,7 @@
 //above imports important libraries
 
 MS5837 sensor;
-const int stepsPerRevolution = 400;  
+const int stepsPerRevolution = 5000;  
 const int dirPin = 6;  
 const int stepPin = 5; 
 //const int enablePin = 13; 
@@ -133,6 +133,7 @@ void loop() {//code that constantly loops
     // Execute the float operation
 
     FloatDown();
+    FloatUp();  
     digitalWrite(enablePin, HIGH);
     reconnectToWiFi();
 
@@ -195,8 +196,6 @@ void FloatDown() {
     sensor.setFluidDensity(1020); // density for freshwater
     Stall(5000); // Replace delay(20000) with Stall(20000), adjust time as needed
   }
-  
-  FloatUp();  
 }
 
 

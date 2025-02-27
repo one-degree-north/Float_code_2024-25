@@ -230,54 +230,6 @@ class ModernFloatWindow(QMainWindow):
         self.floatCount += 1
         self.sendFloatCommand()
 
-    def sendFloatCommand(self):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((self.espIPAddress, self.espPort))
-                s.setblocking(0)
-                s.sendall(b'float')
-                print("Sending float command (includes mounting)")
-
-                while True:
-                    ready = select.select([s], [], [], 1)
-                    if ready[0]:
-                        data = s.recv(1024)
-                        if not data:
-                            break
-
-                        detailed_response = data.decode('utf-8').strip()
-                        print("Received:", detailed_response)
-
-                        if detailed_response.startswith(("project Number", "RN16")):
-                            self.processReceivedData(detailed_response)
-                            break
-
-        except Exception as e:
-            print(f"Failed to send float command: {e}")
-
-    def sendPlotCommand(self):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((self.espIPAddress, self.espPort))
-                s.setblocking(0)
-                s.sendall(b'plot')
-                print("Requesting plot data")
-
-                while True:
-                    ready = select.select([s], [], [], 1)
-                    if ready[0]:
-                        data = s.recv(1024)
-                        if not data:
-                            break
-
-                        detailed_response = data.decode('utf-8').strip()
-                        print("Received:", detailed_response)
-                        self.processReceivedData(detailed_response)
-                        break
-
-        except Exception as e:
-            print(f"Failed to send plot command: {e}")
-
     def sendInCommand(self):
         print("'In' command not implemented in Arduino")
         if self.inCount == 0:
@@ -288,21 +240,36 @@ class ModernFloatWindow(QMainWindow):
 
     def processReceivedData(self, data):
         try:
-            # Splitting the data based on '|'
-            parts = data.split('|')
-            project_number = parts[0]  # project number is the first part
-            
-            # Update project number in status
-            self.updateStatusLabels(project_number=project_number)
-
-            # Process the data points
-            if len(parts) > 1:
-                data_points = parts[1].split(';')
+            # Check if data contains the project number separator
+            if '|' in data:
+                # Original format with project number
+                parts = data.split('|')
+                project_number = parts[0]  # project number is the first part
+                
+                # Update project number in status
+                self.updateStatusLabels(project_number=project_number)
+                
+                # Data points are in the second part
+                if len(parts) > 1:
+                    data_points_str = parts[1]
+                else:
+                    data_points_str = ""
+            else:
+                # New format without project number - directly from Arduino
+                data_points_str = data
+                # Keep project number as is
+    
+            # Process the data points if any exist
+            if data_points_str:
+                data_points = data_points_str.split(';')
                 times = []
                 depths = []
                 pressures = []
-
+    
                 for point in data_points:
+                    if not point:  # Skip empty points
+                        continue
+                        
                     details = point.split(':')
                     if len(details) == 3:  # time:depth:pressure format
                         time_val = details[0]
@@ -319,13 +286,64 @@ class ModernFloatWindow(QMainWindow):
                             pressure=pressure_val,
                             time=f"{time_val}s"
                         )
-
+    
                 # Update the graph with collected data
                 if times and depths:
                     self.updateGraph(times, depths)
-
+    
         except Exception as e:
             print(f"Error processing received data: {e}")
+            print(f"Data was: {data}")
+
+    def sendFloatCommand(self):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.espIPAddress, self.espPort))
+                s.setblocking(0)
+                s.sendall(b'float')
+                print("Sending float command (includes mounting)")
+    
+                while True:
+                    ready = select.select([s], [], [], 1)
+                    if ready[0]:
+                        data = s.recv(1024)
+                        if not data:
+                            break
+    
+                        detailed_response = data.decode('utf-8').strip()
+                        print("Received:", detailed_response)
+    
+                        # Process any response from Arduino, regardless of format
+                        self.processReceivedData(detailed_response)
+                        break
+    
+        except Exception as e:
+            print(f"Failed to send float command: {e}")
+
+    def sendPlotCommand(self):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.espIPAddress, self.espPort))
+                s.setblocking(0)
+                s.sendall(b'plot')
+                print("Requesting plot data")
+    
+                while True:
+                    ready = select.select([s], [], [], 1)
+                    if ready[0]:
+                        data = s.recv(1024)
+                        if not data:
+                            break
+    
+                        detailed_response = data.decode('utf-8').strip()
+                        print("Received:", detailed_response)
+                        
+                        # Process any response from Arduino, regardless of format
+                        self.processReceivedData(detailed_response)
+                        break
+    
+        except Exception as e:
+            print(f"Failed to send plot command: {e}")
 
     def updateStatusLabels(self, project_number=None, depth=None, pressure=None, time=None):
         if project_number is not None:

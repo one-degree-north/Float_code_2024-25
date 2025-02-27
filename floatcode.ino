@@ -16,7 +16,7 @@ MS5837 sensor;
 const int stepsPerRevolution = 5000;  
 const int dirPin = 6;  
 const int stepPin = 5; 
-//const int enablePin = 13; 
+const int enablePin = 13; 
 const int stepReps = 6; 
 
 Stepper myStepper(stepsPerRevolution, dirPin, stepPin);

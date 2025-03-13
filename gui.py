@@ -1,6 +1,7 @@
 import sys
 from PyQt6.QtWidgets import (QWidget, QLabel, QApplication, QMainWindow, 
-                           QHBoxLayout, QPushButton, QVBoxLayout, QFrame)
+                           QHBoxLayout, QPushButton, QVBoxLayout, QFrame,
+                           QLineEdit, QMessageBox)
 from PyQt6.QtGui import QIcon, QPalette, QColor, QPen, QPainter, QFont
 from PyQt6.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -16,6 +17,8 @@ class ModernFloatWindow(QMainWindow):
         self.yAxis = []
         self.floatCount = 0
         self.inCount = 0
+        
+        # Default IP address - can be changed by user
         self.espIPAddress = '192.168.10.102'
         self.espPort = 80
         
@@ -24,12 +27,19 @@ class ModernFloatWindow(QMainWindow):
         self.depth_label = None
         self.pressure_label = None
         self.time_label = None
+        self.connection_status = None
+        
+        # Command status tracking
+        self.is_float_mounted = False
         
         # Set dark theme colors
         self.colors = {
             'background': '#1a1a1a',
             'card': '#2d2d2d',
             'accent': '#007AFF',
+            'success': '#28a745',
+            'warning': '#ffc107',
+            'danger': '#dc3545',
             'text': '#ffffff',
             'text_secondary': '#909090'
         }
@@ -39,18 +49,27 @@ class ModernFloatWindow(QMainWindow):
         self.plot_button = None
         self.in_button = None
         self.mount_button = None
+        self.ip_input = None
+        
+        # Setup timer for periodic status updates
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.updateConnectionStatus)
         
         self.setupGUI()
         self.connectSignals()
+        
+        # Start the timer
+        self.status_timer.start(5000)  # Check connection every 5 seconds
 
     def connectSignals(self):
         self.float_down.clicked.connect(self.onFloatDownClicked)
         self.plot_button.clicked.connect(self.sendPlotCommand)
         self.in_button.clicked.connect(self.sendInCommand)
         self.mount_button.clicked.connect(self.sendMountCommand)
+        self.ip_input.returnPressed.connect(self.updateIPAddress)
 
     def setupGUI(self):
-        self.setWindowTitle("Float Control System")
+        self.setWindowTitle("MATE Float Control System")
         self.resize(1400, 800)
         self.setStyleSheet(f"background-color: {self.colors['background']};")
 
@@ -87,11 +106,32 @@ class ModernFloatWindow(QMainWindow):
         self.depth_label = self.createStatusCard("Current Depth", "0.00 m")
         self.pressure_label = self.createStatusCard("Pressure", "101.3 kPa")
         self.time_label = self.createStatusCard("Time", "00:00:00")
+        
+        # Add connection status
+        self.connection_status = self.createStatusCard("Connection", "Checking...")
 
         layout.addWidget(self.project_label)
         layout.addWidget(self.depth_label)
         layout.addWidget(self.pressure_label)
         layout.addWidget(self.time_label)
+        layout.addWidget(self.connection_status)
+        
+        # Add IP address input
+        ip_layout = QHBoxLayout()
+        ip_label = QLabel("Float IP:")
+        ip_label.setStyleSheet(f"color: {self.colors['text']};")
+        self.ip_input = QLineEdit(self.espIPAddress)
+        self.ip_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {self.colors['background']};
+                color: {self.colors['text']};
+                border-radius: 5px;
+                padding: 5px;
+            }}
+        """)
+        ip_layout.addWidget(ip_label)
+        ip_layout.addWidget(self.ip_input)
+        layout.addLayout(ip_layout)
 
         layout.addStretch(1)
         panel.setLayout(layout)
@@ -172,6 +212,9 @@ class ModernFloatWindow(QMainWindow):
         self.axes.set_xlabel('Time (s)', color=self.colors['text'])
         self.axes.set_ylabel('Depth (m)', color=self.colors['text'])
         
+        # Invert y-axis for more intuitive depth display (0 at surface, increasing as you go deeper)
+        self.axes.invert_yaxis()
+        
         layout.addWidget(self.canvas)
         layout.addStretch(1)
         panel.setLayout(layout)
@@ -191,15 +234,15 @@ class ModernFloatWindow(QMainWindow):
         layout.setSpacing(10)
         layout.setContentsMargins(10, 10, 10, 10)
 
+        self.mount_button = self.createStyledButton("MOUNT")
         self.float_down = self.createStyledButton("FLOAT DOWN")
         self.plot_button = self.createStyledButton("PLOT DATA")
-        self.in_button = self.createStyledButton("IN")
-        self.mount_button = self.createStyledButton("MOUNT")
+        self.in_button = self.createStyledButton("RETURN FLOAT")
 
+        layout.addWidget(self.mount_button)
         layout.addWidget(self.float_down)
         layout.addWidget(self.plot_button)
         layout.addWidget(self.in_button)
-        layout.addWidget(self.mount_button)
         layout.addStretch(1)
 
         panel.setLayout(layout)
@@ -226,42 +269,93 @@ class ModernFloatWindow(QMainWindow):
         """)
         return button
 
+    def updateIPAddress(self):
+        new_ip = self.ip_input.text().strip()
+        if new_ip:
+            self.espIPAddress = new_ip
+            self.updateConnectionStatus()
+            self.showMessage("IP Address Updated", f"Float IP set to: {new_ip}")
+
+    def updateConnectionStatus(self):
+        # Try to connect to the ESP8266 to check status
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)  # Short timeout for quick check
+                s.connect((self.espIPAddress, self.espPort))
+                self.connection_status.value_label.setText("Connected")
+                self.connection_status.value_label.setStyleSheet(f"color: {self.colors['success']}; font-size: 24px; font-weight: bold;")
+        except Exception:
+            self.connection_status.value_label.setText("Disconnected")
+            self.connection_status.value_label.setStyleSheet(f"color: {self.colors['danger']}; font-size: 24px; font-weight: bold;")
+
     def onFloatDownClicked(self):
+        if not self.is_float_mounted:
+            self.showMessage("Error", "Float must be mounted first. Please click MOUNT button.")
+            return
+            
         self.floatCount += 1
         self.sendFloatCommand()
 
     def sendInCommand(self):
-        print("'In' command not implemented in Arduino")
-        if self.inCount == 0:
-            self.inCount += 1
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(3.0)
+                s.connect((self.espIPAddress, self.espPort))
+                s.sendall(b'in')
+                print("Sending 'in' command")
+                
+                try:
+                    data = s.recv(1024)
+                    response = data.decode('utf-8').strip()
+                    print("Received:", response)
+                    self.is_float_mounted = False
+                    self.showMessage("Success", "Float returned to surface")
+                except socket.timeout:
+                    self.showMessage("Warning", "No response from float, but command was sent")
+        except Exception as e:
+            self.showMessage("Error", f"Failed to send command: {str(e)}")
 
     def sendMountCommand(self):
-        print("'Mount' command not implemented in Arduino")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(3.0)
+                s.connect((self.espIPAddress, self.espPort))
+                s.sendall(b'mount')
+                print("Sending 'mount' command")
+                
+                try:
+                    data = s.recv(1024)
+                    response = data.decode('utf-8').strip()
+                    print("Received:", response)
+                    self.is_float_mounted = True
+                    self.showMessage("Success", "Float mounted successfully")
+                except socket.timeout:
+                    self.is_float_mounted = True
+                    self.showMessage("Warning", "No response from float, but command was sent")
+        except Exception as e:
+            self.showMessage("Error", f"Failed to send command: {str(e)}")
 
     def processReceivedData(self, data):
         try:
-            # Check if data contains the project number separator
-            if '|' in data:
-                # Original format with project number
-                parts = data.split('|')
-                project_number = parts[0]  # project number is the first part
+            # First check if this is a simple status message
+            if ',' in data and not ';' in data:
+                # Simple status message format: "Time: 0, Pressure: 101.3, Depth: 0.05"
+                matches = re.findall(r'Time: (\d+), Pressure: ([0-9.]+), Depth: ([0-9.]+)', data)
+                if matches and len(matches[0]) == 3:
+                    time_val = matches[0][0]
+                    pressure_val = float(matches[0][1])
+                    depth_val = float(matches[0][2])
+                    
+                    self.updateStatusLabels(
+                        depth=depth_val,
+                        pressure=pressure_val,
+                        time=f"{time_val}s"
+                    )
+                return
                 
-                # Update project number in status
-                self.updateStatusLabels(project_number=project_number)
-                
-                # Data points are in the second part
-                if len(parts) > 1:
-                    data_points_str = parts[1]
-                else:
-                    data_points_str = ""
-            else:
-                # New format without project number - directly from Arduino
-                data_points_str = data
-                # Keep project number as is
-    
-            # Process the data points if any exist
-            if data_points_str:
-                data_points = data_points_str.split(';')
+            # Process data points in time:depth:pressure format
+            if ';' in data or ':' in data:  # Multiple data points or at least one data point
+                data_points = data.split(';')
                 times = []
                 depths = []
                 pressures = []
@@ -280,15 +374,15 @@ class ModernFloatWindow(QMainWindow):
                         depths.append(depth_val)
                         pressures.append(pressure_val)
                         
-                        # Update latest values in status
-                        self.updateStatusLabels(
-                            depth=depth_val,
-                            pressure=pressure_val,
-                            time=f"{time_val}s"
-                        )
-    
-                # Update the graph with collected data
+                # Update latest values in status if we have data
                 if times and depths:
+                    self.updateStatusLabels(
+                        depth=depths[-1],
+                        pressure=pressures[-1],
+                        time=f"{times[-1]}s"
+                    )
+                    
+                    # Update the graph with collected data
                     self.updateGraph(times, depths)
     
         except Exception as e:
@@ -298,56 +392,57 @@ class ModernFloatWindow(QMainWindow):
     def sendFloatCommand(self):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5.0)  # Increase timeout for float operation
                 s.connect((self.espIPAddress, self.espPort))
-                s.setblocking(0)
                 s.sendall(b'float')
-                print("Sending float command (includes mounting)")
-    
-                while True:
-                    ready = select.select([s], [], [], 1)
-                    if ready[0]:
-                        data = s.recv(1024)
-                        if not data:
-                            break
-    
-                        detailed_response = data.decode('utf-8').strip()
-                        print("Received:", detailed_response)
-    
-                        # Process any response from Arduino, regardless of format
-                        self.processReceivedData(detailed_response)
-                        break
+                print("Sending float command")
+                
+                try:
+                    data = s.recv(1024)
+                    detailed_response = data.decode('utf-8').strip()
+                    print("Received:", detailed_response)
+                    
+                    # Process initial status from Arduino
+                    self.processReceivedData(detailed_response)
+                    self.showMessage("Info", "Float operation started. Retrieving data...")
+                    
+                    # After float operation completes, get the data
+                    self.sendPlotCommand()
+                except socket.timeout:
+                    self.showMessage("Warning", "Float operation started but no response received")
+                    
+                    # Try to get data anyway
+                    self.sendPlotCommand()
     
         except Exception as e:
-            print(f"Failed to send float command: {e}")
+            self.showMessage("Error", f"Failed to send float command: {str(e)}")
 
     def sendPlotCommand(self):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5.0)
                 s.connect((self.espIPAddress, self.espPort))
-                s.setblocking(0)
                 s.sendall(b'plot')
                 print("Requesting plot data")
     
-                while True:
-                    ready = select.select([s], [], [], 1)
-                    if ready[0]:
-                        data = s.recv(1024)
-                        if not data:
-                            break
-    
-                        detailed_response = data.decode('utf-8').strip()
-                        print("Received:", detailed_response)
-                        
-                        # Process any response from Arduino, regardless of format
+                try:
+                    data = s.recv(1024)
+                    detailed_response = data.decode('utf-8').strip()
+                    print("Received data:", detailed_response)
+                    
+                    if not detailed_response:
+                        self.showMessage("Info", "No data points available yet")
+                    else:
+                        # Process any response from Arduino
                         self.processReceivedData(detailed_response)
-                        break
+                        self.showMessage("Success", "Data retrieved and plotted successfully")
+                except socket.timeout:
+                    self.showMessage("Warning", "Timeout while waiting for plot data")
     
         except Exception as e:
-            print(f"Failed to send plot command: {e}")
+            self.showMessage("Error", f"Failed to send plot command: {str(e)}")
 
-    def updateStatusLabels(self, project_number=None, depth=None, pressure=None, time=None):
-        if project_number is not None:
-            self.project_label.value_label.setText(str(project_number))
+    def updateStatusLabels(self, depth=None, pressure=None, time=None):
         if depth is not None:
             self.depth_label.value_label.setText(f"{depth:.2f} m")
         if pressure is not None:
@@ -356,26 +451,64 @@ class ModernFloatWindow(QMainWindow):
             self.time_label.value_label.setText(str(time))
 
     def updateGraph(self, times, depths):
-        self.xAxis = [float(time) for time in times]
-        self.yAxis = depths
-        self.axes.clear()
+        try:
+            self.xAxis = [float(time) for time in times]
+            self.yAxis = [float(depth) for depth in depths]
+            
+            self.axes.clear()
+            
+            self.axes.set_facecolor(self.colors['card'])
+            self.axes.tick_params(colors=self.colors['text'])
+            for spine in self.axes.spines.values():
+                spine.set_color(self.colors['text_secondary'])
+            
+            self.axes.plot(self.xAxis, self.yAxis, 
+                          color=self.colors['accent'],
+                          linewidth=2,
+                          marker='o',
+                          label='Depth (meters)')
+            
+            # Add horizontal line at competition target depth (2.5m)
+            self.axes.axhline(y=2.5, color=self.colors['success'], linestyle='--', alpha=0.7)
+            
+            # Add shaded area for valid depth range (2.0-3.0m, ±50cm from target)
+            self.axes.axhspan(2.0, 3.0, alpha=0.2, color=self.colors['success'])
+            
+            self.axes.set_xlabel('Time (s)', color=self.colors['text'])
+            self.axes.set_ylabel('Depth (m)', color=self.colors['text'])
+            
+            # Invert y-axis to show depth correctly (0 at top, increasing downward)
+            self.axes.invert_yaxis()
+            
+            self.axes.legend(facecolor=self.colors['card'], 
+                            labelcolor=self.colors['text'])
+            
+            self.canvas.draw()
+        except Exception as e:
+            print(f"Error updating graph: {e}")
+
+    def showMessage(self, title, message):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
         
-        self.axes.set_facecolor(self.colors['card'])
-        self.axes.tick_params(colors=self.colors['text'])
-        for spine in self.axes.spines.values():
-            spine.set_color(self.colors['text_secondary'])
+        # Style the message box
+        msg_box.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {self.colors['card']};
+                color: {self.colors['text']};
+            }}
+            QPushButton {{
+                background-color: {self.colors['accent']};
+                color: white;
+                border-radius: 5px;
+                padding: 5px 15px;
+                font-weight: bold;
+            }}
+        """)
         
-        self.axes.plot(self.xAxis, self.yAxis, 
-                      color=self.colors['accent'],
-                      linewidth=2,
-                      label='Depth (meters)')
-        
-        self.axes.set_xlabel('Time (s)', color=self.colors['text'])
-        self.axes.set_ylabel('Depth (m)', color=self.colors['text'])
-        self.axes.legend(facecolor=self.colors['card'], 
-                        labelcolor=self.colors['text'])
-        
-        self.canvas.draw()
+        msg_box.exec()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
